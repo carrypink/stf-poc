@@ -20,14 +20,14 @@ services:
       - storage-temp
       - websocket
       - api
-  adb:
-    image: sorccu/adb:latest
-    restart: unless-stopped
-    privileged: true
-    volumes:
-      - /dev/bus/usb:/dev/bus/usb
+#  adb:
+#    image: sorccu/adb:latest
+#    restart: unless-stopped
+#    privileged: true
+#    volumes:
+#      - /dev/bus/usb:/dev/bus/usb
   rethinkdb:
-    image: rethinkdb:2.3
+    image: rethinkdb:2.4
     restart: unless-stopped
     volumes:
       - rethinkdb:/data
@@ -47,7 +47,10 @@ services:
     restart: unless-stopped
     environment:
       - SECRET
+      - RETHINKDB_PORT_28015_TCP
     command: stf auth-mock --app-url http://${PUBLIC_IP}/ --port 3000
+    depends_on:
+      - rethinkdb
   processor:
     image: openstf/stf:latest
     restart: unless-stopped
@@ -66,6 +69,9 @@ services:
     image: openstf/stf:latest
     restart: unless-stopped
     command: stf triproxy dev --bind-pub "tcp://*:7250" --bind-dealer "tcp://*:7260" --bind-pull "tcp://*:7270"
+    ports:
+      - 7250:7250
+      - 7270:7270
   migrate:
     image: openstf/stf:latest
     environment:
@@ -73,17 +79,17 @@ services:
     command: stf migrate
     depends_on:
       - rethinkdb
-  provider:
-    image: openstf/stf:latest
-    restart: unless-stopped
-    command: stf provider --name ${STATION_NAME} --connect-sub tcp://dev-triproxy:7250 --connect-push tcp://dev-triproxy:7270 --storage-url http://${PUBLIC_IP}/ --public-ip ${PUBLIC_IP} --heartbeat-interval 10000 --screen-ws-url-pattern "ws://${PUBLIC_IP}/d/nuc/<%= serial %>/<%= publicPort %>/" --adb-host adb --min-port 7400 --max-port 7700
-    ports:
-      - 7400-7700:7400-7700
-    depends_on:
-      - adb
-      - dev-triproxy
-      - triproxy
-      - storage-temp
+#  provider:
+#    image: openstf/stf:latest
+#    restart: unless-stopped
+#    command: stf provider --name ${STATION_NAME} --connect-sub tcp://dev-triproxy:7250 --connect-push tcp://dev-triproxy:7270 --storage-url http://${PUBLIC_IP}/ --public-ip ${PUBLIC_IP} --heartbeat-interval 10000 --screen-ws-url-pattern "ws://${PUBLIC_IP}/d/nuc/<%= serial %>/<%= publicPort %>/" --adb-host adb --min-port 7400 --max-port 7700
+#    ports:
+#      - 7400-7700:7400-7700
+#    depends_on:
+#      - adb
+#      - dev-triproxy
+#      - triproxy
+#      - storage-temp
   reaper:
     image: openstf/stf:latest
     restart: unless-stopped
@@ -132,8 +138,21 @@ services:
     environment:
       - SECRET
       - RETHINKDB_PORT_28015_TCP
-    command: stf api --port 3000 --connect-sub tcp://triproxy:7150 --connect-push tcp://triproxy:7170
+    command: stf api --port 3000 --connect-sub tcp://triproxy:7150 --connect-push tcp://triproxy:7170 --connect-sub-dev tcp://dev-triproxy:7250 --connect-push-dev tcp://dev-triproxy:7270
     depends_on:
       - migrate
       - rethinkdb
       - triproxy
+      - dev-triproxy
+  groups:
+    image: openstf/stf:latest
+    restart: unless-stopped
+    environment:
+      - SECRET
+      - RETHINKDB_PORT_28015_TCP
+    command: stf groups-engine --connect-sub tcp://triproxy:7150 --connect-push tcp://triproxy:7170 --connect-sub-dev tcp://dev-triproxy:7250 --connect-push-dev tcp://dev-triproxy:7270
+    depends_on:
+      - migrate
+      - rethinkdb
+      - triproxy
+      - dev-triproxy
